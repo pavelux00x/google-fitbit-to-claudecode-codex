@@ -62,13 +62,42 @@ wrong secret).
 
 ## On a server
 
-The OAuth login needs a browser, so run `setup` on your laptop and copy only the config
-across:
+### Logging in on a headless VPS
+
+The OAuth consent happens in a browser, and the browser has to come back to
+`http://localhost:8765/callback`. On a VPS that link is useless if you open it on your
+laptop: *your* localhost is not the server's, so the consent never reaches the script.
+
+An SSH tunnel makes the two the same. From your own machine:
+
+```bash
+ssh -L 8765:localhost:8765 user@your-vps
+```
+
+Then, inside that session:
+
+```bash
+python3 health.py setup
+```
+
+The script notices it has no browser, prints the link instead of trying to open one, and
+waits. Open that link on your laptop: the browser hits *your* `localhost:8765`, SSH carries
+the connection to the VPS, and the script receives the consent. Nothing else changes — the
+redirect URI stays `http://localhost:8765/callback`, so the OAuth client needs no extra
+configuration.
+
+Force that behaviour anywhere with `--no-browser`.
+
+### Or just copy the config
+
+If you would rather not tunnel, run `setup` on your laptop and copy the result across:
 
 ```bash
 scp ~/.config/google-health/config.json user@server:~/.config/google-health/config.json
 ssh user@server chmod 600 ~/.config/google-health/config.json
 ```
+
+### Then keep it running
 
 **First, remove the 7-day expiry**, or the server stops after a week: console → Branding
 (fill the required fields) → Audience → *Publish app*. It stays an unverified app, capped

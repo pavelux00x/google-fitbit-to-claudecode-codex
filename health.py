@@ -113,6 +113,15 @@ TEXT = {
         "s5_abort": "aborted. Fix the OAuth client in the console and run again.",
         "s6": "Login and consent",
         "s6_open": "\nOpening the browser. If it does not open, paste this link:\n\n{u}\n",
+        "s6_tunnel": (
+            "\nThere is no browser on this machine.\n\n"
+            "  From your own computer, reconnect forwarding the port:\n\n"
+            "      ssh -L {p}:localhost:{p}  user@this-server\n\n"
+            "  then, in that same session, run this setup again and open the link\n"
+            "  below in your own browser. localhost:{p} on your machine becomes\n"
+            "  localhost:{p} here, so the consent comes back through the tunnel.\n\n"
+            "  Alternative: run setup on your laptop and copy\n"
+            "  ~/.config/google-health/config.json over to this machine.\n\n{u}\n"),
         "s6_wait": "Waiting for consent (up to 5 minutes)...",
         "s6_noresp": "no answer from the browser before the timeout.",
         "s6_state": "state mismatch: possibly a forged request, login aborted.",
@@ -217,6 +226,15 @@ TEXT = {
         "s5_abort": "interrotto. Sistema il client OAuth in console e rilancia.",
         "s6": "Login e consenso",
         "s6_open": "\nApro il browser. Se non si apre, incolla questo link:\n\n{u}\n",
+        "s6_tunnel": (
+            "\nSu questa macchina non c'e' un browser.\n\n"
+            "  Dal tuo computer, riconnettiti inoltrando la porta:\n\n"
+            "      ssh -L {p}:localhost:{p}  utente@questo-server\n\n"
+            "  poi, nella stessa sessione, rilancia questo setup e apri il link\n"
+            "  qui sotto nel TUO browser. localhost:{p} sulla tua macchina diventa\n"
+            "  localhost:{p} qui, quindi il consenso torna indietro dal tunnel.\n\n"
+            "  In alternativa: fai il setup sul portatile e copia qui\n"
+            "  ~/.config/google-health/config.json\n\n{u}\n"),
         "s6_wait": "In attesa del consenso (max 5 minuti)...",
         "s6_noresp": "nessuna risposta dal browser entro il timeout.",
         "s6_state": "state non corrispondente: possibile richiesta contraffatta, login annullato.",
@@ -333,6 +351,15 @@ def clean_path(raw):
     return s.replace("\\ ", " ").strip()
 
 
+def headless(env=None, platform=None):
+    """True when there is no browser to open here: a VPS over SSH, typically."""
+    env = os.environ if env is None else env
+    platform = sys.platform if platform is None else platform
+    if platform == "darwin" or platform.startswith("win"):
+        return False
+    return not (env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"))
+
+
 def die(msg, code=1):
     print(f"\n[error] {msg}", file=sys.stderr)
     sys.exit(code)
@@ -445,7 +472,7 @@ def client_check(client_id, client_secret):
         return False, t("cl_nonet", e=e)
 
 
-def do_login(client_id, client_secret):
+def do_login(client_id, client_secret, open_browser=True):
     """Authorization-code flow + PKCE over loopback. Returns the refresh token."""
     verifier = b64url(secrets.token_bytes(32))
     state = secrets.token_urlsafe(16)
@@ -467,8 +494,11 @@ def do_login(client_id, client_secret):
         die(t("port_busy", p=PORT, e=e))
     server.timeout = 300
 
-    print(t("s6_open", u=url))
-    webbrowser.open(url)
+    if open_browser:
+        print(t("s6_open", u=url))
+        webbrowser.open(url)
+    else:
+        print(t("s6_tunnel", p=PORT, u=url))
     print(t("s6_wait"))
     _Callback.query = None
     server.handle_request()
@@ -655,11 +685,13 @@ def sleep_points(cfg, start):
 def cmd_setup(args):
     global LANG
     LANG = args.lang or choose_language()
+    no_browser = args.no_browser or headless()
     print("\n" + __doc__.strip().split("\n\n")[0])
 
     if args.login_only:
         cfg = load_config()
-        cfg["refresh_token"] = do_login(cfg["client_id"], cfg["client_secret"])
+        cfg["refresh_token"] = do_login(cfg["client_id"], cfg["client_secret"],
+                                    open_browser=not no_browser)
         cfg.pop("access_token", None)
         save_config(cfg)
         print(t("relogin"))
@@ -724,7 +756,7 @@ def cmd_setup(args):
             die(t("s5_abort"))
 
     step(6, t("s6"))
-    refresh = do_login(cid, csec)
+    refresh = do_login(cid, csec, open_browser=not no_browser)
     save_config({"project": project, "client_id": cid, "client_secret": csec,
                  "refresh_token": refresh, "scopes": SCOPES})
     print(t("s6_saved", p=CONFIG))
@@ -803,6 +835,13 @@ def cmd_selfcheck(args):
     assert set(TEXT["en"]) == set(TEXT["it"]), set(TEXT["en"]) ^ set(TEXT["it"])
     assert len(TEXT["en"]["pages"]) == len(TEXT["it"]["pages"]) == len(CONSOLE_URLS)
 
+    # headless detection: a VPS has no DISPLAY, a laptop always has a browser
+    assert headless({}, "linux") is True
+    assert headless({"DISPLAY": ":0"}, "linux") is False
+    assert headless({"WAYLAND_DISPLAY": "wayland-0"}, "linux") is False
+    assert headless({}, "darwin") is False
+    assert headless({}, "win32") is False
+
     # token expiry: refresh when less than 60s are left
     now = datetime.now(timezone.utc).timestamp()
     assert not ({"access_token": "x", "expires_at": now + 30}.get("expires_at") > now + 60)
@@ -822,6 +861,8 @@ def main():
 
     s = sub.add_parser("setup", help="configure everything from scratch")
     s.add_argument("--project", help="use an existing Cloud project instead of creating one")
+    s.add_argument("--no-browser", action="store_true",
+                   help="do not try to open a browser (headless server)")
     s.add_argument("--login-only", action="store_true",
                    help="only redo the login (expired refresh token)")
     s.set_defaults(func=cmd_setup)

@@ -1,5 +1,7 @@
 data_exported/
 health-data/
+dashboard.html
 __pycache__/
 *.pyc
 client_secret*.json
+key

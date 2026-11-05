@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Health Dashboard</title>
+<style>
+  :root{
+    --bg:#0a0e1a; --panel:#141b2e; --panel2:#1b2340; --line:#273252;
+    --ink:#e8edf7; --dim:#8b9ac2; --accent:#3b82f6;
+    --deep:#1d4ed8; --rem:#8b5cf6; --light:#60a5fa; --awake:#4b5a7a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+       padding:24px 16px 56px}
+  .wrap{max-width:1180px;margin:0 auto}
+  header{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;margin-bottom:22px}
+  h1{font-size:24px;margin:0;letter-spacing:-.02em}
+  .sub{color:var(--dim);font-size:13px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .top{display:grid;grid-template-columns:1fr 340px;gap:16px;margin-bottom:16px}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .kpi{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .kpi .v{font-size:26px;font-weight:650;letter-spacing:-.02em}
+  .kpi .l{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+  .kpi .n{color:var(--dim);font-size:12px;margin-top:4px}
+  #stage{width:100%;height:340px;border-radius:12px;cursor:grab;display:block;
+         background:radial-gradient(ellipse at 50% 35%,#1b2a52 0%,#0d1326 70%)}
+  #stage:active{cursor:grabbing}
+  .hint{color:var(--dim);font-size:12px;text-align:center;margin-top:8px}
+  h2{font-size:15px;margin:0 0 14px;font-weight:600}
+  h2 span{color:var(--dim);font-weight:400}
+  .chart{margin-bottom:16px}
+  svg{width:100%;display:block;overflow:visible}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;color:var(--dim);font-size:12px;margin-top:10px}
+  .legend i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:6px;
+            vertical-align:-1px}
+  .an{white-space:pre-wrap}
+  .an .meta{color:var(--dim);font-size:12px;margin-top:14px;padding-top:12px;
+            border-top:1px solid var(--line)}
+  .empty{color:var(--dim);font-style:italic}
+  @media(max-width:860px){.top{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Health Dashboard</h1>
+    <div class="sub" id="range"></div>
+  </header>
+
+  <div class="top">
+    <div class="panel">
+      <h2>At a glance</h2>
+      <div class="kpis" id="kpis"></div>
+    </div>
+    <div class="panel">
+      <h2>Your band</h2>
+      <canvas id="stage"></canvas>
+      <div class="hint">drag to rotate</div>
+    </div>
+  </div>
+
+  <div class="panel chart">
+    <h2>Steps <span id="stepsSub"></span></h2>
+    <svg id="stepsChart" viewBox="0 0 1000 240" preserveAspectRatio="none"></svg>
+    <div class="legend"><span><i style="background:var(--accent)"></i>daily steps</span>
+      <span><i style="background:var(--dim)"></i>average</span></div>
+  </div>
+
+  <div class="panel chart">
+    <h2>Sleep <span id="sleepSub"></span></h2>
+    <svg id="sleepChart" viewBox="0 0 1000 240" preserveAspectRatio="none"></svg>
+    <div class="legend">
+      <span><i style="background:var(--deep)"></i>deep</span>
+      <span><i style="background:var(--rem)"></i>REM</span>
+      <span><i style="background:var(--light)"></i>light</span>
+      <span><i style="background:var(--awake)"></i>awake</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Sleep analysis <span id="anModel"></span></h2>
+    <div class="an" id="analysis"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const DATA = __DATA__;
+const ANALYSIS = __ANALYSIS__;
+const S = DATA.series, A = DATA.avg;
+
+/* ---------- header + KPIs ---------- */
+document.getElementById('range').textContent =
+  S.length ? `${S[0].date} → ${S[S.length-1].date} · ${DATA.source}` : 'no data';
+
+const kpis = [
+  [Math.round(A.steps_avg).toLocaleString(), 'steps / day', `best ${A.steps_max.toLocaleString()}`],
+  [A.sleep_avg.toFixed(1) + 'h', 'sleep / night', `${A.sleep_min.toFixed(1)}h – ${A.sleep_max.toFixed(1)}h`],
+  [A.nights, 'nights recorded', `of ${A.days} days, +${DATA.naps} naps`],
+  [A.deep_pct.toFixed(0) + '%', 'deep sleep', 'of time asleep'],
+  [A.rem_pct.toFixed(0) + '%', 'REM sleep', 'of time asleep'],
+  [(A.steps_avg*0.75/1000).toFixed(1) + ' km', 'distance / day', 'approx. from steps'],
+];
+document.getElementById('kpis').innerHTML = kpis.map(([v,l,n]) =>
+  `<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div><div class="n">${n}</div></div>`
+).join('');
+
+/* ---------- charts ---------- */
+const W = 1000, H = 240, PAD_L = 44, PAD_B = 26, PAD_T = 12;
+const plotW = W - PAD_L - 8, plotH = H - PAD_B - PAD_T;
+const el = (n, a, kids) => {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', n);
+  for (const k in a) e.setAttribute(k, a[k]);
+  if (kids) e.append(...kids);
+  return e;
+};
+const label = (x, y, text, anchor) => el('text',
+  {x, y, fill:'#8b9ac2', 'font-size':11, 'text-anchor':anchor||'middle'}, [document.createTextNode(text)]);
+
+function axis(svg, max, unit) {
+  for (let i = 0; i <= 4; i++) {
+    const v = max * i / 4, y = PAD_T + plotH - (plotH * i / 4);
+    svg.append(el('line', {x1:PAD_L, y1:y, x2:W-8, y2:y, stroke:'#273252', 'stroke-width':1}));
+    svg.append(label(PAD_L - 8, y + 4, unit(v), 'end'));
+  }
+}
+
+function dayTicks(svg, n) {
+  const every = n > 20 ? 5 : 2;
+  for (let i = 0; i < n; i += every) {
+    const bw = plotW / n;
+    svg.append(label(PAD_L + bw*i + bw/2, H - 8, S[i].date.slice(5)));
+  }
+}
+
+/* steps */
+(function(){
+  const svg = document.getElementById('stepsChart');
+  const vals = S.map(x => x.steps || 0);
+  const max = Math.max(...vals, 1) * 1.1;
+  axis(svg, max, v => Math.round(v/1000) + 'k');
+  const bw = plotW / S.length;
+  S.forEach((d, i) => {
+    const v = d.steps || 0, h = plotH * v / max;
+    const x = PAD_L + bw*i + bw*0.15, w = bw*0.7;
+    const bar = el('rect', {x, y: PAD_T + plotH - h, width:w, height:h, rx:3,
+                            fill: d.steps == null ? '#273252' : 'var(--accent)',
+                            opacity: d.steps == null ? .4 : .9});
+    bar.append(el('title', {}, [document.createTextNode(
+      `${d.date}: ${d.steps == null ? 'no data' : d.steps.toLocaleString() + ' steps'}`)]));
+    svg.append(bar);
+  });
+  const ay = PAD_T + plotH - plotH * A.steps_avg / max;
+  svg.append(el('line', {x1:PAD_L, y1:ay, x2:W-8, y2:ay, stroke:'#8b9ac2',
+                         'stroke-width':1.5, 'stroke-dasharray':'5 4'}));
+  dayTicks(svg, S.length);
+  document.getElementById('stepsSub').textContent =
+    `· ${A.days} days · avg ${Math.round(A.steps_avg).toLocaleString()}`;
+})();
+
+/* sleep, stacked by stage */
+(function(){
+  const svg = document.getElementById('sleepChart');
+  const tot = x => x.sleep ? (x.sleep.deep + x.sleep.rem + x.sleep.light + x.sleep.awake) : 0;
+  const max = Math.max(...S.map(tot), 60) * 1.1;
+  axis(svg, max, v => (v/60).toFixed(0) + 'h');
+  const bw = plotW / S.length;
+  S.forEach((d, i) => {
+    const x = PAD_L + bw*i + bw*0.15, w = bw*0.7;
+    if (!d.sleep) {
+      svg.append(el('rect', {x, y: PAD_T + plotH - 4, width:w, height:4, rx:2,
+                             fill:'#273252'}));
+      return;
+    }
+    let y = PAD_T + plotH;
+    [['deep','var(--deep)'],['rem','var(--rem)'],['light','var(--light)'],['awake','var(--awake)']]
+      .forEach(([k, c]) => {
+        const h = plotH * d.sleep[k] / max;
+        if (h <= 0) return;
+        y -= h;
+        const r = el('rect', {x, y, width:w, height:h, fill:c});
+        r.append(el('title', {}, [document.createTextNode(
+          `${d.date} — ${k}: ${d.sleep[k]} min (total ${(d.sleep.asleep/60).toFixed(1)}h asleep)`)]));
+        svg.append(r);
+      });
+  });
+  dayTicks(svg, S.length);
+  document.getElementById('sleepSub').textContent =
+    `· ${A.nights} nights · avg ${A.sleep_avg.toFixed(1)}h`;
+})();
+
+/* ---------- analysis ---------- */
+(function(){
+  const box = document.getElementById('analysis');
+  if (!ANALYSIS) {
+    box.innerHTML = '<span class="empty">No analysis yet. Run: python3 dashboard.py --analyze</span>';
+    return;
+  }
+  box.textContent = ANALYSIS.text;
+  const m = document.createElement('div');
+  m.className = 'meta';
+  m.textContent = `${ANALYSIS.model} · ${ANALYSIS.tokens} tokens · ${ANALYSIS.at}`;
+  box.append(m);
+  document.getElementById('anModel').textContent = '· via OpenRouter';
+})();
+
+/* ---------- the flying blue band ---------- */
+(function(){
+  const canvas = document.getElementById('stage');
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+  camera.position.set(0, 0.15, 5.0);
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+  scene.add(new THREE.AmbientLight(0x9fc0e8, 0.55));
+  const key = new THREE.DirectionalLight(0xffffff, 0.85);
+  key.position.set(3.5, 5, 6); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xdbeafe, 0.30);
+  fill.position.set(-5, 1, 3); scene.add(fill);
+  const rim = new THREE.DirectionalLight(0x93c5fd, 0.45);
+  rim.position.set(-2, -4, -5); scene.add(rim);
+
+  /* woven nylon, painted on a canvas: warp and weft alternate so the light
+     catches them in opposite directions, which is what reads as fabric */
+  function weave() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g = c.getContext('2d');
+    g.fillStyle = '#5d93cf'; g.fillRect(0, 0, 256, 256);
+    const cell = 16;
+    for (let y = 0; y < 256; y += cell) {
+      for (let x = 0; x < 256; x += cell) {
+        const over = ((x / cell + y / cell) % 2) === 0;
+        g.fillStyle = over ? '#8ebdee' : '#4d80bd';
+        g.fillRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
+        g.fillStyle = 'rgba(255,255,255,.16)';
+        if (over) g.fillRect(x + 1, y + 1.5, cell - 2, 3.2);
+        else      g.fillRect(x + 1.5, y + 1, 3.2, cell - 2);
+        g.fillStyle = 'rgba(16,42,78,.16)';
+        if (over) g.fillRect(x + 1, y + cell - 4, cell - 2, 2.6);
+        else      g.fillRect(x + cell - 4, y + 1, 2.6, cell - 2);
+      }
+    }
+    return c;
+  }
+  const tex = new THREE.CanvasTexture(weave());
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(11, 2);
+  const tailTex = tex.clone();
+  tailTex.needsUpdate = true;
+  tailTex.repeat.set(4, 2);
+
+  const fabric = new THREE.MeshStandardMaterial({
+    map: tex, bumpMap: tex, bumpScale: 0.055,
+    roughness: 0.96, metalness: 0.0, side: THREE.DoubleSide});
+  const fabricTail = fabric.clone();
+  fabricTail.map = fabricTail.bumpMap = tailTex;
+  const metal = new THREE.MeshStandardMaterial({
+    color: 0xd9dee7, roughness: 0.22, metalness: 0.95, side: THREE.DoubleSide});
+
+  const R = 1.42, WIDTH = 1.02;
+  const band = new THREE.Group();
+
+  // the loop itself: an open tube, not a fat torus - a strap has no round edge
+  band.add(new THREE.Mesh(
+    new THREE.CylinderGeometry(R, R, WIDTH, 128, 1, true), fabric));
+
+  // the free end wrapping over the loop, with its edge visible
+  const tail = new THREE.Mesh(
+    new THREE.CylinderGeometry(R + 0.055, R + 0.055, WIDTH - 0.02, 128, 1, true,
+                               0.55, 2.35), fabricTail);
+  band.add(tail);
+
+  // the metal keeper the strap threads through
+  const keeper = new THREE.Group();
+  keeper.add(new THREE.Mesh(
+    new THREE.CylinderGeometry(R + 0.12, R + 0.12, 0.40, 64, 1, true, -0.17, 0.34), metal));
+  keeper.add(new THREE.Mesh(
+    new THREE.CylinderGeometry(R - 0.09, R - 0.09, 0.40, 64, 1, true, -0.17, 0.34), metal));
+  [-1, 1].forEach(sign => {
+    const side = new THREE.Mesh(new THREE.BoxGeometry(0.215, 0.035, 0.40), metal);
+    side.position.set(Math.sin(0.17 * sign) * (R + 0.015), 0, Math.cos(0.17 * sign) * (R + 0.015));
+    side.rotation.y = 0.17 * sign;
+    keeper.add(side);
+  });
+  keeper.rotation.y = 0;                // theta 0 is +Z: the top of the loop, opposite the tracker
+  band.add(keeper);
+
+  // the tracker, dark, barely visible on the inside - as in the real thing
+  const tracker = new THREE.Mesh(
+    new THREE.BoxGeometry(0.62, 0.30, 0.08),
+    new THREE.MeshStandardMaterial({color: 0x181c24, roughness: 0.35, metalness: 0.4}));
+  tracker.position.set(0, 0, -(R - 0.07));
+  band.add(tracker);
+
+  // your last twelve days, on that tiny screen
+  const sc = document.createElement('canvas');
+  sc.width = 128; sc.height = 64;
+  const sg = sc.getContext('2d');
+  sg.fillStyle = '#05080f'; sg.fillRect(0, 0, 128, 64);
+  const last = S.slice(-12).map(x => x.steps || 0);
+  const mx = Math.max(...last, 1);
+  last.forEach((v, i) => {
+    sg.fillStyle = '#3b82f6';
+    const h = 44 * v / mx;
+    sg.fillRect(6 + i * 10, 56 - h, 7, h);
+  });
+  const screen = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.56, 0.26),
+    new THREE.MeshBasicMaterial({map: new THREE.CanvasTexture(sc)}));
+  screen.position.set(0, 0, -(R - 0.115));
+  screen.rotation.y = Math.PI;
+  band.add(screen);
+
+  scene.add(band);
+  band.rotation.set(-1.02, 0.0, 0.18);   // lying at the angle of the product shot
+
+  let dragging = false, px = 0, py = 0, vx = 0, vy = 0;
+  canvas.addEventListener('pointerdown', e => { dragging = true; px = e.clientX; py = e.clientY; });
+  addEventListener('pointermove', e => {
+    if (!dragging) return;
+    vy = (e.clientX - px) * 0.008;
+    vx = (e.clientY - py) * 0.008;
+    band.rotation.y += vy;
+    band.rotation.x += vx;
+    px = e.clientX; py = e.clientY;
+  });
+  addEventListener('pointerup', () => { dragging = false; });
+  canvas.addEventListener('touchmove', e => e.preventDefault(), {passive:false});
+
+  function size() {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  addEventListener('resize', size); size();
+
+  const t0 = performance.now();
+  (function loop(now) {
+    const t = (now - t0) / 1000;
+    band.position.y = Math.sin(t * 1.1) * 0.14;      // it floats
+    band.position.x = Math.cos(t * 0.7) * 0.05;
+    if (!dragging) {
+      band.rotation.y += 0.0040 + vy * 0.92;         // keeps your spin, then settles
+      band.rotation.x += vx * 0.9;
+      vy *= 0.94; vx *= 0.9;
+    }
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  })(t0);
+})();
+</script>
+</body>
+</html>

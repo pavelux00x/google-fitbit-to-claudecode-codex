@@ -131,6 +131,32 @@ honest cost of that road:
 - managing subscribers needs the `cloud-platform` scope, so a service account rather than
   the user token this script uses
 
+## Dashboard
+
+```bash
+python3 health.py fetch --days 30
+python3 dashboard.py --analyze --lang it
+open dashboard.html
+```
+
+`dashboard.py` builds a single self-contained `dashboard.html`: daily steps, nights stacked
+by sleep stage (deep / REM / light / awake), a handful of KPIs, and a blue woven Fitbit band in 3D
+you can spin with the cursor — fabric texture, metal keeper, and the last twelve days
+drawn on its little screen. The data is inlined in the file, so it opens offline with no
+server — and for the same reason `dashboard.html` is git-ignored: it contains your health data.
+
+`--analyze` sends a compact textual digest (never the raw JSON) to
+[OpenRouter](https://openrouter.ai) and embeds the reply. The default model is
+`openai/gpt-4o-mini`; pick another with `--model`. Beware that several cheap models are
+reasoning models: with a small token budget they spend it all thinking and return empty
+content, which the script reports instead of writing a blank panel. The answer is cached in
+`health-data/analysis.json` and reused until you pass `--analyze` again.
+
+The API key is read from a file on disk, never passed on the command line and never printed.
+Edit `KEY_FILE` at the top of `dashboard.py` to point at yours.
+
+Treat the analysis as a reading of the numbers, not medical advice.
+
 ## Limits worth knowing up front
 
 - **Use the same Google account as your Fitbit.** Google Workspace accounts are not supported by Fitbit.

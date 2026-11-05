@@ -1,1 +1,5 @@
 data_exported/
+health-data/
+__pycache__/
+*.pyc
+client_secret*.json

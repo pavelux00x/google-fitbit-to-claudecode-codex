@@ -1,109 +1,111 @@
 # google-health-cli
 
-Download your **Fitbit / Google Health** data to your own machine, as JSON, with one command.
+Scarica i tuoi dati **Fitbit / Google Health** sul tuo computer, in JSON, con un comando.
 
-The old Fitbit Web API was shut down on **30 October 2026**: every script and MCP server
-built on `api.fitbit.com` stopped working. The only way in is now the
+La vecchia Fitbit Web API è stata spenta il **30 ottobre 2026**: tutti gli script e gli MCP
+server costruiti su `api.fitbit.com` hanno smesso di funzionare. L'unica strada rimasta è la
 [Google Health API](https://developers.google.com/health).
 
-This script automates everything that **can** be automated and walks you through the three
-things Google forces you to do by hand in the console.
+Questo script automatizza tutto ciò che **si può** automatizzare e ti guida nei passaggi che
+Google obbliga a fare a mano nella console.
 
-- **No Python dependencies** — standard library only (3.9+)
-- [`gcloud`](https://cloud.google.com/sdk/docs/install) is needed for the initial setup only
-- Credentials stay on your machine, in `~/.config/google-health/config.json` (mode `600`)
-- The guided setup speaks **English or Italian** — it asks on the first prompt
+- **Zero dipendenze Python** — solo la libreria standard (3.9+)
+- [`gcloud`](https://cloud.google.com/sdk/docs/install) serve solo per il setup iniziale
+- Le credenziali restano sul tuo computer, in `~/.config/google-health/config.json` (permessi `600`)
+- La guida parla **italiano o inglese** — te lo chiede al primo prompt
 
-## Usage
+## Uso
 
 ```bash
 git clone https://github.com/pavelux00x/google-fitbit-to-claudecode-codex.git
 cd google-fitbit-to-claudecode-codex
-python3 health.py setup     # once: about 10 minutes
-python3 health.py fetch     # whenever you want fresh data
+python3 health.py setup     # una volta sola: una decina di minuti
+python3 health.py fetch     # ogni volta che vuoi dati aggiornati
 ```
 
-Data lands in `health-data/health-YYYY-MM-DD.json`.
+I dati finiscono in `health-data/health-AAAA-MM-GG.json`.
 
 ```bash
-python3 health.py fetch --days 30                # last 30 days
-python3 health.py fetch --types steps sleep      # only some types
-python3 health.py whoami                         # check the token works
-python3 health.py selfcheck                      # offline test, no network
-python3 health.py --lang it setup                # skip the language prompt
+python3 health.py fetch --days 30                # ultimi 30 giorni
+python3 health.py fetch --types steps sleep      # solo alcuni tipi
+python3 health.py whoami                         # verifica che il token funzioni
+python3 health.py selfcheck                      # test offline, senza rete
+python3 health.py --lang it setup                # salta la domanda sulla lingua
 ```
 
-## What `setup` does
+## Cosa fa `setup`
 
-| Step | Who does it |
+| Passaggio | Chi lo fa |
 |---|---|
-| Google login | `gcloud auth login` |
-| Create the Cloud project | automatic |
-| Enable `health.googleapis.com` | automatic |
-| Google Auth Platform: first-time wizard (new projects) | **you**, page opened by the script |
-| Audience: Testing + test user | **you**, page opened by the script |
-| Data access: pick the scopes | **you**, page opened by the script |
-| Create the OAuth client + redirect URI | **you**, page opened by the script |
-| Check the OAuth client really exists | automatic, **without opening a browser** |
-| OAuth login, consent, refresh token | automatic (loopback + PKCE) |
-| Verify with `users.getIdentity` | automatic |
+| Login Google | `gcloud auth login` |
+| Crea il progetto Cloud | automatico |
+| Abilita `health.googleapis.com` | automatico |
+| Google Auth Platform: wizard iniziale (progetti nuovi) | **tu**, pagina aperta dallo script |
+| Audience: Testing + test user | **tu**, pagina aperta dallo script |
+| Data access: selezione degli scope | **tu**, pagina aperta dallo script |
+| Crea il client OAuth + redirect URI | **tu**, pagina aperta dallo script |
+| Verifica che il client OAuth esista davvero | automatico, **senza aprire il browser** |
+| Login OAuth, consenso, refresh token | automatico (loopback + PKCE) |
+| Verifica con `users.getIdentity` | automatico |
 
-**Why three manual steps?** Google exposes no API for creating an OAuth client. The IAP
-OAuth Admin API, the last one that could, was shut down on 19 March 2026. No script can
-click those three buttons for you — anything claiming otherwise is using Terraform, which
-still needs an existing OAuth client to authenticate itself.
+**Perché quattro passaggi a mano?** Google non espone nessuna API per creare un client
+OAuth. La IAP OAuth Admin API, l'ultima che lo permetteva, è stata chiusa il 19 marzo 2026.
+Nessuno script al mondo può fare quei click al posto tuo: chi promette il contrario usa
+Terraform, che per autenticarsi ha comunque bisogno di un client OAuth già esistente.
 
-If you run `setup` again while the OAuth client already exists — saved credentials, or a
-`client_secret_*.json` in `~/Downloads` — the script verifies it against Google's token
-endpoint and offers to skip the console steps instead of reopening four pages. The check
-costs nothing: it asks for a refresh with a deliberately fake token and looks at whether
-Google answers `invalid_grant` (client is fine) or `invalid_client` (client missing or
-wrong secret).
+Se rilanci `setup` quando il client OAuth esiste già — credenziali salvate, oppure un
+`client_secret_*.json` in `~/Downloads` — lo script lo verifica contro l'endpoint token di
+Google e ti propone di saltare i passaggi in console invece di riaprirti quattro pagine. La
+verifica non costa nulla: chiede un refresh con un token volutamente falso e guarda se
+Google risponde `invalid_grant` (client buono) oppure `invalid_client` (client inesistente o
+secret sbagliato).
 
-## On a server
+## Su un server
 
-### Logging in on a headless VPS
+### Login su una VPS senza browser
 
-The OAuth consent happens in a browser, and the browser has to come back to
-`http://localhost:8765/callback`. On a VPS that link is useless if you open it on your
-laptop: *your* localhost is not the server's, so the consent never reaches the script.
+Il consenso OAuth avviene nel browser, e il browser deve tornare su
+`http://localhost:8765/callback`. Su una VPS quel link è inutile se lo apri dal portatile:
+il *tuo* localhost non è quello del server, quindi il consenso non raggiunge mai lo script.
 
-An SSH tunnel makes the two the same. From your own machine:
+Un tunnel SSH fa coincidere i due. Dal tuo computer:
 
 ```bash
-ssh -L 8765:localhost:8765 user@your-vps
+ssh -L 8765:localhost:8765 utente@tua-vps
 ```
 
-Then, inside that session:
+Poi, dentro quella sessione:
 
 ```bash
 python3 health.py setup
 ```
 
-The script notices it has no browser, prints the link instead of trying to open one, and
-waits. Open that link on your laptop: the browser hits *your* `localhost:8765`, SSH carries
-the connection to the VPS, and the script receives the consent. Nothing else changes — the
-redirect URI stays `http://localhost:8765/callback`, so the OAuth client needs no extra
-configuration.
+Lo script si accorge di non avere un browser, stampa il link invece di tentare di aprirne
+uno, e aspetta. Apri quel link sul tuo portatile: il browser contatta il *tuo*
+`localhost:8765`, SSH porta la connessione fino alla VPS, e lo script riceve il consenso.
+Non cambia nient'altro — il redirect URI resta `http://localhost:8765/callback`, quindi il
+client OAuth non va riconfigurato.
 
-Force that behaviour anywhere with `--no-browser`.
+Attenzione alla direzione: serve `-L` (locale), non `-R` (remoto).
 
-### Or just copy the config
+Per forzare quel comportamento ovunque c'è `--no-browser`.
 
-If you would rather not tunnel, run `setup` on your laptop and copy the result across:
+### Oppure copia la configurazione
+
+Se preferisci non usare il tunnel, fai il `setup` sul portatile e copia il risultato:
 
 ```bash
-scp ~/.config/google-health/config.json user@server:~/.config/google-health/config.json
-ssh user@server chmod 600 ~/.config/google-health/config.json
+scp ~/.config/google-health/config.json utente@server:~/.config/google-health/config.json
+ssh utente@server chmod 600 ~/.config/google-health/config.json
 ```
 
-### Then keep it running
+### Poi tienilo acceso
 
-**First, remove the 7-day expiry**, or the server stops after a week: console → Branding
-(fill the required fields) → Audience → *Publish app*. It stays an unverified app, capped
-at 100 users, which is irrelevant if it is just you.
+**Prima di tutto, togli la scadenza a 7 giorni**, altrimenti il server si ferma dopo una
+settimana: console → Branding (compila i campi obbligatori) → Audience → *Pubblica app*.
+Resta un'app non verificata, con il tetto di 100 utenti: irrilevante se sei solo tu.
 
-Then a systemd timer every 15 minutes:
+Poi un timer systemd ogni 15 minuti:
 
 ```ini
 # ~/.config/systemd/user/health.service
@@ -126,39 +128,39 @@ WantedBy=timers.target
 systemctl --user enable --now health.timer
 ```
 
-In cron it is a single line:
+In cron è una riga sola:
 
 ```
 */15 * * * * cd ~/google-fitbit-to-claudecode-codex && /usr/bin/python3 health.py fetch --days 2
 ```
 
-### Why 15 minutes and not 5
+### Perché 15 minuti e non 5
 
-Quota is not the constraint: the limit is 300 requests per minute per user and this script
-makes 7 per run. The point is that **the data upstream is never fresher than that**. A
-Fitbit syncs to the phone over Bluetooth roughly every 15 minutes, and only while the
-Google Health app is open and the phone is in range. Polling every 5 minutes returns the
-same payload three times in a row.
+Non è un problema di quota: il limite è 300 richieste al minuto per utente e questo script
+ne fa 7 per giro. Il punto è che **a monte i dati non esistono più freschi di così**. Il
+Fitbit sincronizza col telefono via Bluetooth circa ogni 15 minuti, e solo se l'app Google
+Health è aperta e il telefono è nel raggio. Interrogare l'API ogni 5 minuti restituisce tre
+volte di fila lo stesso identico contenuto.
 
-### If you really need real time: webhooks
+### Se ti serve davvero il tempo reale: webhook
 
-The API can notify you when data changes instead of making you look for it. You register a
-*subscriber* with a public HTTPS endpoint and Google POSTs to it on every update. The
-honest cost of that road:
+L'API sa notificarti quando i dati cambiano, invece di farteli cercare. Registri un
+*subscriber* con un endpoint HTTPS pubblico e Google ci manda un POST a ogni aggiornamento.
+Il costo onesto di questa strada:
 
-- a public HTTPS endpoint, TLS 1.2+, reachable from Google
-- on registration Google sends two verification POSTs with body `{"type": "verification"}`:
-  the one **with** the `Authorization` header must answer 200/201, the one **without** must
-  answer 401/403. Get either wrong and the create fails with `FAILED_PRECONDITION`
-- every notification is ECDSA P-256 signed, signature in the `GOOGLE-HEALTH-API-SIGNATURE`
-  header, to be verified against the raw body. Keys rotate every 30 days, so the keyset must
-  be fetched, not hardcoded
-- **the notification carries no data**: it names the user, the data type and an interval
-  only. You still fetch the values yourself with `dataPoints:reconcile`
-- you must answer `204` immediately and process asynchronously. Anything else and Google
-  retries with backoff, holding notifications for 7 days
-- managing subscribers needs the `cloud-platform` scope, so a service account rather than
-  the user token this script uses
+- serve un endpoint HTTPS pubblico, TLS 1.2+, raggiungibile da Google
+- alla registrazione Google manda due POST di verifica con body `{"type": "verification"}`:
+  quello **con** header `Authorization` deve rispondere 200/201, quello **senza** 401/403.
+  Se ne sbagli uno, la create fallisce con `FAILED_PRECONDITION`
+- ogni notifica è firmata ECDSA P-256, firma nell'header `GOOGLE-HEALTH-API-SIGNATURE`, da
+  verificare sul corpo grezzo. Le chiavi ruotano ogni 30 giorni, quindi il keyset va
+  scaricato, non scritto nel codice
+- **la notifica non contiene i dati**: indica solo utente, tipo di dato e intervallo. I
+  valori li prendi comunque tu con `dataPoints:reconcile`
+- devi rispondere `204` subito e lavorare in asincrono. Se rispondi altro, Google ritenta
+  con backoff e tiene le notifiche per 7 giorni
+- gestire i subscriber richiede lo scope `cloud-platform`, quindi un service account e non
+  il token utente che usa questo script
 
 ## Dashboard
 
@@ -168,52 +170,54 @@ python3 dashboard.py --analyze --lang it
 open dashboard.html
 ```
 
-`dashboard.py` builds a single self-contained `dashboard.html`: daily steps, nights stacked
-by sleep stage (deep / REM / light / awake), a handful of KPIs, and a blue woven Fitbit band in 3D
-you can spin with the cursor — fabric texture, metal keeper, and the last twelve days
-drawn on its little screen. The data is inlined in the file, so it opens offline with no
-server — and for the same reason `dashboard.html` is git-ignored: it contains your health data.
+`dashboard.py` costruisce un unico `dashboard.html` autosufficiente: passi giornalieri,
+notti impilate per fase del sonno (profondo / REM / leggero / sveglio), qualche KPI, e il
+cinturino Fitbit blu in tessuto in 3D che puoi girare col cursore — trama intrecciata,
+passante di metallo, e gli ultimi dodici giorni disegnati sul suo schermino. I dati sono
+incorporati nel file, quindi si apre offline senza server — e per lo stesso motivo
+`dashboard.html` è gitignorato: contiene i tuoi dati sanitari.
 
-`--analyze` sends a compact textual digest (never the raw JSON) to
-[OpenRouter](https://openrouter.ai) and embeds the reply. The default model is
-`openai/gpt-4o-mini`; pick another with `--model`. Beware that several cheap models are
-reasoning models: with a small token budget they spend it all thinking and return empty
-content, which the script reports instead of writing a blank panel. The answer is cached in
-`health-data/analysis.json` and reused until you pass `--analyze` again.
+`--analyze` manda un riassunto testuale compatto (mai il JSON grezzo) a
+[OpenRouter](https://openrouter.ai) e ne incorpora la risposta. Il modello predefinito è
+`openai/gpt-4o-mini`, cambiabile con `--model`. Attenzione: diversi modelli economici sono
+reasoning model e con un budget di token piccolo lo consumano tutto a ragionare,
+restituendo contenuto vuoto — lo script te lo dice invece di scrivere un pannello bianco.
+La risposta viene messa in cache in `health-data/analysis.json` e riusata finché non passi
+di nuovo `--analyze`.
 
-The API key is read from a file on disk, never passed on the command line and never printed.
-Edit `KEY_FILE` at the top of `dashboard.py` to point at yours.
+La chiave API viene letta da un file su disco, non passa mai dalla riga di comando e non
+viene mai stampata. Modifica `KEY_FILE` in cima a `dashboard.py` per puntare alla tua.
 
-Treat the analysis as a reading of the numbers, not medical advice.
+Considera l'analisi una lettura dei numeri, non un parere medico.
 
-## Limits worth knowing up front
+## Limiti da sapere prima di iniziare
 
-- **Use the same Google account as your Fitbit.** Google Workspace accounts are not supported by Fitbit.
-- **In Testing mode the refresh token expires after 7 days.** The script tells you when it
-  happens: `python3 health.py setup --login-only`. To make it permanent, publish the app from
-  the Audience page (it stays unverified, capped at 100 users — irrelevant for personal use).
-- **There is no sandbox**: the project you create reads your real data. Every scope requested is `.readonly`.
-- Some types cap a single call at 14 days (`heart-rate`, `active-minutes`, `total-calories`),
-  90 for the rest. The script splits the requests for you.
+- **Usa lo stesso account Google del tuo Fitbit.** Gli account Google Workspace non sono supportati da Fitbit.
+- **In modalità Testing il refresh token scade dopo 7 giorni.** Lo script te lo dice quando
+  succede: `python3 health.py setup --login-only`. Per renderlo permanente pubblica l'app
+  dalla pagina Audience (resta non verificata, tetto di 100 utenti — irrilevante per uso personale).
+- **Non esiste un ambiente sandbox**: il progetto che crei lavora sui tuoi dati reali. Tutti gli scope richiesti sono `.readonly`.
+- Alcuni tipi hanno un massimo di 14 giorni per singola chiamata (`heart-rate`,
+  `active-minutes`, `total-calories`), 90 per gli altri. Lo script spezza le richieste da solo.
 
-## Data types downloaded
+## Tipi di dato scaricati
 
-Via `dailyRollUp` (one value per day): `steps`, `distance`, `weight`, `active-minutes`,
-`heart-rate`, `total-calories`. Via `list` (one record per session): `sleep`.
+Via `dailyRollUp` (un valore al giorno): `steps`, `distance`, `weight`, `active-minutes`,
+`heart-rate`, `total-calories`. Via `list` (un record per sessione): `sleep`.
 
-The full list of types lives in the
+L'elenco completo dei tipi è nel
 [discovery document](https://health.googleapis.com/$discovery/rest?version=v4).
 
-## Troubleshooting
+## Se qualcosa va storto
 
-| Error | Almost certainly |
+| Errore | Causa quasi certa |
 |---|---|
-| `403` on a call | a scope was not selected under *Data access*, or your address is not in *Test users* |
-| `invalid_grant` | refresh token expired (the 7 days) → `setup --login-only` |
-| `redirect_uri_mismatch` | the OAuth client is missing exactly `http://localhost:8765/callback` |
-| `enable` fails mentioning billing | link a billing account to the project and rerun with `--project NAME` |
-| project creation fails | project quota is full: create one by hand and use `--project NAME` |
+| `403` su una chiamata | uno scope non selezionato in *Data access*, oppure il tuo indirizzo non è tra i *Test users* |
+| `invalid_grant` | refresh token scaduto (i 7 giorni) → `setup --login-only` |
+| `redirect_uri_mismatch` | nel client OAuth manca esattamente `http://localhost:8765/callback` |
+| `enable` fallisce parlando di billing | collega un account di fatturazione al progetto e rilancia con `--project NOME` |
+| creazione del progetto fallita | quota progetti esaurita: creane uno a mano e usa `--project NOME` |
 
-## License
+## Licenza
 
-MIT. Not affiliated with Google or Fitbit.
+MIT. Non affiliato a Google né a Fitbit.
